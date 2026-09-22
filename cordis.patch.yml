@@ -1,0 +1,36 @@
+# Windows workspace-open fix.
+#
+# Why this bundle exists: the shipped `explorer` catalog entry launches through
+# `shell-open`, which on Windows runs
+#   powershell.exe -NoProfile -Command "Invoke-Item -LiteralPath '<dir>'"
+# Invoke-Item runs the directory's default shell verb, and that verb REUSES an
+# existing File Explorer window for the same directory instead of raising one.
+# The command returns 0 as soon as the shell accepts the handoff, so the host
+# reports success even when no window became visible. The result is the
+# observed "sometimes nothing happens, sometimes it reuses or disturbs the
+# window I already had open".
+#
+# `explorer.exe /e,<dir>` always opens a window for that directory (measured:
+# 6/6 fresh windows, and again for the already-open case).
+#
+# `open-in-app` (the host half) STAYS MOUNTED: this bundle reuses its
+# `/open-in-app/apps` and `/open-in-app/open` routes for every non-Explorer
+# entry in the menu, so VS Code / Windows Terminal / Git Bash keep the shipped
+# resolution and launch path unchanged.
+#
+# `ui-open-in-app` (the browser half) is disabled so this bundle's client half
+# is the only registrant of the Session-header cell. Both halves would
+# otherwise claim the shared `open-in-app` cell id, and which one won would
+# depend on activation order.
+
+- id: ui-open-in-app
+  disabled: true
+
+- insert:
+    - id: open-folder-fix
+      name: '@local/dsh-open-folder-fix'
+      config:
+        # Early-failure watch window for the explorer.exe handoff. Launch
+        # success is decoupled from process exit because Explorer exits
+        # immediately after delegating to the running shell.
+        launchWatchMs: 1500
