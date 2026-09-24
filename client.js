@@ -7,7 +7,23 @@ window.__ModuleLoader__.load({
 
 		const React = require("react");
 		const primitives = require("@deepseek-ai/dsh-client-ui-primitives");
-		const { Menu, Tooltip, IconChevronDownOutline14 } = primitives;
+		const { Menu, Tooltip } = primitives;
+
+		// The product-icon set was renamed in 0.1.7-rc.1: the name is now the
+		// glyph plus its weight, and the pixel size is only a prop — "rendered
+		// size remains a prop instead of part of the component name". The old
+		// `…Outline14` spelling no longer exists.
+		//
+		// This is worth a fallback chain rather than a straight rename. The old
+		// code destructured a missing export, got `undefined`, and handed it to
+		// React.createElement — which throws inside the header slot, where the
+		// render error boundary swallowed it and took the ENTIRE split button
+		// down, chevron included. A missing icon must degrade to a missing
+		// glyph, never to a missing button.
+		const ChevronDown = primitives.IconChevronDownOutlineRegular
+			?? primitives.IconChevronDownOutlineMedium
+			?? primitives.IconChevronDownOutline
+			?? primitives.IconChevronDownOutline14;
 
 		//#region shared route constants (mirrors the host halves)
 		/** Shipped application list route. */
@@ -341,7 +357,7 @@ window.__ModuleLoader__.load({
 						onClick: () => {
 							setOpen((value) => !value);
 						},
-					}, React.createElement(IconChevronDownOutline14, { size: 11 }))),
+					}, ChevronDown === undefined ? null : React.createElement(ChevronDown, { size: 11 }))),
 			});
 		}
 		//#endregion
