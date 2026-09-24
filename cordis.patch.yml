@@ -1,17 +1,19 @@
 # Windows workspace-open fix.
 #
 # Why this bundle exists: the shipped `explorer` catalog entry launches through
-# `shell-open`, which on Windows runs
-#   powershell.exe -NoProfile -Command "Invoke-Item -LiteralPath '<dir>'"
-# Invoke-Item runs the directory's default shell verb, and that verb REUSES an
-# existing File Explorer window for the same directory instead of raising one.
-# The command returns 0 as soon as the shell accepts the handoff, so the host
-# reports success even when no window became visible. The result is the
-# observed "sometimes nothing happens, sometimes it reuses or disturbs the
-# window I already had open".
+# `shell-open`, which on Windows ends at `@deepseek-ai/dsh-native-command`
+# running `explorer.exe "<file:// URI>"` (0.1.7-rc.1; earlier releases used a
+# powershell `Invoke-Item` command, same symptom). That open reports SUCCESS
+# while raising nothing on some Windows hosts — the package's own README
+# records it: in a non-interactive session `explorer.exe` invokes no file
+# association yet still exits 1 after about a second, so "an open reports
+# success having opened nothing". The host reads the exit code as the verdict
+# (`runExplorer` swallows exit 1 as a delegated handoff and `runShellOpen`
+# backs it with a `launchWatchMs` watchdog), so a window that never appeared
+# looks exactly like one that did.
 #
-# `explorer.exe /e,<dir>` always opens a window for that directory (measured:
-# 6/6 fresh windows, and again for the already-open case).
+# `explorer.exe /e,<dir>` raises a window for that directory (measured: 6/6
+# fresh windows, and again for the already-open case).
 #
 # `open-in-app` (the host half) STAYS MOUNTED: this bundle reuses its
 # `/open-in-app/apps` and `/open-in-app/open` routes for every non-Explorer

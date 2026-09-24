@@ -5,49 +5,52 @@
 ## 问题
 
 DSH 的 Session 头部有一个「在应用中打开工作目录」的分裂按钮。在 Windows 上，
-它实际执行的命令是：
+它走 `shell-open` 通道，最终由 `@deepseek-ai/dsh-native-command` 执行：
 
 ```
-powershell.exe -NoProfile -Command "Invoke-Item -LiteralPath '<目录>'"
+explorer.exe "<目录的 file:// URI>"        ← 0.1.7-rc.1 的写法
 ```
 
-`Invoke-Item` 执行的是该目录的**默认 shell 动词**。它一旦把请求交给 shell 就
-立刻返回退出码 0，**不管窗口最终有没有出现在你眼前**。
+更早的版本走的是另一条命令（`powershell.exe -NoProfile -Command
+"Invoke-Item -LiteralPath '<目录>'"`）；两者症状相同，见下。
 
-上游选这条通道是有注释记录的：catalog 里 `finder` / `explorer` 都用
-`shell-open`，注释说明理由是"对目录来说文件管理器就是 OS 默认程序，而直接
-`explorer.exe <dir>` 不总能可靠地弹出窗口"。也就是说，上游要的是"用系统默认
-方式打开目录"这个抽象，并不是想实现"已打开就跳过去"。
+**上游的 explorer 调用在某些 Windows 主机上不起作用，而且不报错。** 这是上游
+自己记录在案的已知限制（`dsh-native-command/README.md`，Known Limitations）：
 
-### 那个动词到底有多不可靠
+> 非交互会话（服务、或无交互登录的计划任务）里，`explorer.exe` 不调用任何文件
+> 关联，并在约 1 秒后仍然以退出码 1 返回……于是「打开」**报告成功却什么都没打开**。
 
-实测（Windows 10 19045.7663），对**同一个已打开的目录**再执行 `Invoke-Item`：
+上游的成功判据就是退出码：`runExplorer` 把退出码 1 当作"已交接给桌面进程"而
+吞掉，`runShellOpen` 再用 `launchWatchMs` 看门狗兜底。于是"窗口开了"和"什么都
+没发生"在 DSH 看来完全一样，按钮照常变回空闲、不报错。
 
-| 已有窗口状态 | 实际结果 |
-| --- | --- |
-| 已打开且在前台 | 又新建一个窗口（窗口数 1 → 2） |
-| 已打开但在别的窗口后面 | 又新建一个窗口（2 → 3），没有任何窗口被提到前台 |
-| 已打开但最小化 | 又新建一个窗口，旧的最小化窗口仍留着（1 → 2） |
+### 实测：上游写法在本机失败
 
-结论：它**既不复用，也不跳转**，行为更像每次新建，但会随窗口来源不同而变化
-（观测到过一次真正复用）。所以现象不是三种确定模式，而是**由窗口状态决定的
-不确定行为**。
+Windows 10 19045.7663，直接用上游模块的真实代码路径调用：
 
-真正的问题在于**没有可靠的成功信号**：`Invoke-Item` 交出控制权即返回 0，
-后端的成功判据就是退出码（`launchWatchMs` 看门狗 + exit 0）。于是"其实什么
-都没发生"与"成功"在 DSH 和系统日志里完全一样，按钮照常变回空闲、不报错。
+| 调用 | 报告结果 | Explorer 窗口数变化 |
+| --- | --- | --- |
+| `openNativePath('D:\Projects\dshell')`（上游 0.1.7-rc.1） | **成功** | **5 → 5（Δ0）** |
+| `explorer.exe /e,D:\Projects\dshell`（本插件） | — | **6 → 7（Δ1）** |
+
+两者都用 `execFile` 调用 `explorer.exe`，唯一差别是参数。上游那次**报告成功、
+一个窗口都没开**——正是上面那段 Known Limitation 描述的情形。
 
 ## 修法
 
-改用 `explorer.exe /e,<目录>`，它对两种情况都稳定地新开窗口。实测
-（PowerShell，`explorer.exe` 交出控制权后一律返回退出码 1，这是委派交接而非失败）：
+改用 `explorer.exe /e,<目录>`，实测能稳定新开窗口。`explorer.exe` 交出控制权后
+一律返回退出码 1，这是委派交接而非失败（上游 `runExplorer` 也按此处理）：
 
 | 命令 | 行为 |
 | --- | --- |
-| `Invoke-Item <目录>`（原状） | 多数情况新建，偶尔复用；成功与否无信号 |
-| `explorer.exe /e,<目录>` | 连续 6 次均新建窗口；目录已开着时同样新建 |
+| `explorer.exe <file:// URI>`（上游现状） | 本机不弹窗，但报告成功 |
+| `explorer.exe /e,<目录>`（本插件） | 连续 6 次均新建窗口；目录已开着时同样新建 |
 | `explorer.exe <目录>` | 也新建窗口 |
 | `explorer.exe /select,<父目录>` | 新建并选中目标 |
+
+`Invoke-Item`（更早版本的上游写法）的表现记录在此备查：它执行该目录的默认
+shell 动词，把请求交给 shell 后立刻返回退出码 0，多数情况新建、偶尔复用，且
+成功与否没有信号。
 
 ## 结构
 

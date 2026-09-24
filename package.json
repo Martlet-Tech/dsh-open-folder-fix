@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Host fix for the Windows workspace-open action: open the workspace directory with explorer.exe /e,<dir> instead of the Invoke-Item shell verb",
+  "description": "Host fix for the Windows workspace-open action: open the workspace directory with explorer.exe /e,<dir>, because the shipped explorer.exe <file:// URI> invocation reports success without raising a window on some hosts",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js"

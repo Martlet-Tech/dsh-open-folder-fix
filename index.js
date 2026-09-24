@@ -5,17 +5,24 @@
  * directory with `explorer.exe /e,<dir>`.
  *
  * Why this exists: the shipped `explorer` catalog entry launches through
- * `shell-open`, which on Windows runs
- *   powershell.exe -NoProfile -Command "Invoke-Item -LiteralPath '<dir>'"
- * `Invoke-Item` runs the directory's default shell verb, and that verb REUSES
- * an existing File Explorer window for that directory instead of raising a
- * window. It also returns 0 as soon as the shell accepts the handoff, so the
- * host reports success even when nothing became visible — which is why the
- * shipped button can appear to do nothing, or to disturb the window the user
- * already had open.
+ * `shell-open`, which on Windows ends at `@deepseek-ai/dsh-native-command`
+ * running
+ *   explorer.exe "<file:// URI of the directory>"
+ * (0.1.7-rc.1; earlier releases used a powershell `Invoke-Item` command
+ * instead, with the same symptom below.)
  *
- * `explorer.exe /e,<dir>` raises a window for the directory in both cases
- * (measured 6/6 fresh windows, and again with the directory already open).
+ * That open reports SUCCESS while raising nothing on some Windows hosts — the
+ * package's own README documents it: in a non-interactive session `explorer.exe`
+ * invokes no file association and still exits 1 after about a second, so "an
+ * open reports success having opened nothing". The host's success test is the
+ * exit code (`runExplorer` swallows exit 1 as a delegated handoff and
+ * `runShellOpen` backs it with a `launchWatchMs` watchdog), so a window that
+ * never appeared is indistinguishable from one that did, and the shipped
+ * button settles back to idle without an error.
+ *
+ * `explorer.exe /e,<dir>` raises a window for that directory (measured 6/6
+ * fresh windows, and again with the directory already open — the same
+ * `execFile` call shape the shipped code uses, differing only in the argument).
  *
  * The route path is deliberately NOT one of the shipped `/open-in-app/*`
  * paths: `webServer.register` rejects a duplicate (kind, path), so overriding
